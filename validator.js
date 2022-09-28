@@ -1,5 +1,6 @@
-// Doi tuong
-function Validator(options) {
+function Validator(formSelector) {
+    var _this = this;
+    var formRules = {};
 
     function getParent(element, selector) {
         while (element.parentElement) {
@@ -10,167 +11,155 @@ function Validator(options) {
         }
     }
 
-    var selectorRules = {};
-
-    //Ham thuc hien validate
-    function validate(inputElement, rule) {
-        var errorElement = getParent(inputElement, options.formGroupSelector).querySelector(options.errorSelector)
-        var errorMessage;
-        //Lay ra cac rules cua selector
-        var rules = selectorRules[rule.selector]
-        // Lap qua tung rule $ kiem tra
-        // Neu co loi thi dung viec kiem tra
-        for (var i = 0; i < rules.length; i++) {
-            switch (inputElement.type) {
-                case 'radio':
-                case 'checkbox':
-                    errorMessage = rules[i](
-                        formElement.querySelector(rule.selector + ':checked')
-                    );
-                    break;
-                default:
-                    errorMessage = rules[i](inputElement.value);
-            }
-            if (errorMessage)
-                break;
-        }
-        if (errorMessage) {
-            errorElement.innerText = errorMessage;
-            getParent(inputElement, options.formGroupSelector).classList.add('invalid');
-        } else {
-            errorElement.innerText = '';
-            getParent(inputElement, options.formGroupSelector).classList.remove('invalid');
-        }
-
-        return !errorMessage;
-
-    }
-
-    // Lay element cua form can validate
-    var formElement = document.querySelector(options.form);
-    if (formElement) {
-
-        // Khi submit form
-        formElement.onsubmit = function (e) {
-            e.preventDefault();
-
-            var isFormValid = true;
-
-            // Lap qua tung rules va validate
-            options.rules.forEach(function (rule) {
-                var inputElement = formElement.querySelector(rule.selector)
-                var isValid = validate(inputElement, rule)
-                if (!isValid) {
-                    isFormValid = false;
-                }
-            });
 
 
-            if (isFormValid) {
-                // Truong hop submit vs JavaScript
-                if (typeof options.onSubmit === 'function') {
-                    var enableInputs = formElement.querySelectorAll('[name]');
-                    var formValues = Array.from(enableInputs).reduce(function (values, input) {
-                        switch (input.type) {
-                            case 'radio':
-                                values[input.name] = formElement.querySelector('input[name="' + input.name + '"]:checked').value;
-                                break;
-                            case 'checkbox':
-                                if(!input.matches(':checked'))
-                                    values[input.name] = '';
-                                    return values;
-                                if(!Array.isArray(values[input.name])){
-                                    values[input.name] = [];
-                                }
-                                values[input.name].push(input.value);   
-                                break;
-                            case 'file':
-                                values[input.name] = input.files;
-                                break;
-                            default:
-                                values[input.name] = input.value
-                        }
-                        return values;
-                    }, {});
-
-                    options.onSubmit(formValues);
-                }
-                // // Truong hop submit vs hanh vi mac dinh
-                // else {
-                //     formElement.submit();
-                // }
-            }
-        }
-
-        // Xu ly lap qua moi rule va xu ly (lang nghe su kien, blur,input,...)
-        options.rules.forEach(function (rule) {
-
-            // luu lai cac rules cho moi input
-
-            if (Array.isArray(selectorRules[rule.selector])) {
-                selectorRules[rule.selector].push(rule.test);
-            } else {
-                selectorRules[rule.selector] = [rule.test];
-            }
-
-            var inputElements = formElement.querySelectorAll(rule.selector)
-
-            Array.from(inputElements).forEach(inputElement => {
-                // Xu ly truong hop blur khoi input
-                inputElement.onblur = function () {
-                    validate(inputElement, rule);
-                }
-
-
-                // Xu ly truong hop khi nguoi dung nhap vao input
-                inputElement.oninput = function () {
-                    var errorElement = getParent(inputElement, options.formGroupSelector).querySelector(options.errorSelector)
-                    errorElement.innerText = '';
-                    getParent(inputElement, options.formGroupSelector).classList.remove('invalid');
-                }
-            });
-        })
-
-    }
-}
-
-// Dinh nghia rules
-// Nguyen tac cua cac rules:
-// 1.Khi co loi => Tra ra message loi
-// 2.Khi hop le => undefined
-Validator.isRequired = function (selector, message) {
-    return {
-        selector: selector,
-        test: function (value) {
-            return value ? undefined : message || 'Vui long nhap truong nay'
-        }
-    }
-}
-
-Validator.isEmail = function (selector, message) {
-    return {
-        selector: selector,
-        test: function (value) {
+    // Neu co loi thi return error messages
+    // Neu khong co loi thi return undefined
+    var validatorRules = {
+        required: function (value) {
+            return value ? undefined : 'Vui lòng nhập trường này'
+        },
+        email: function (value) {
             var regex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
-            return regex.test(value) ? undefined : message || 'Truong nay phai la email';
+            return regex.test(value) ? undefined : 'Vui lòng nhập email này'
+        },
+        min: function (min) {
+            return function (value) {
+                return value.length >= min ? undefined : `Vui lòng nhập ít nhất ${min} kí tự`
+            }
+        },
+        max: function (max) {
+            return function (value) {
+                return value.length <= max ? undefined : `Vui lòng nhập tối đa ${max} kí tự`
+            }
+        }
+    };
+
+
+
+    // Lay ra form element trong DOM theo `formSelector`
+    var formElement = document.querySelector(formSelector);
+
+    // chi xu ly khi co formElement tron DOM
+    if (formElement) {
+        var inputs = formElement.querySelectorAll('[name][rules]');
+        for (var input of inputs) {
+
+            var ruleInfo;
+            var rules = input.getAttribute('rules').split('|');
+            for (var rule of rules) {
+                var isRuleHasValue = rule.includes(':');
+
+                if (isRuleHasValue) {
+                    var ruleInfo = rule.split(':');
+                    rule = ruleInfo[0];
+                }
+
+                var ruleFunc = validatorRules[rule];
+
+                if (isRuleHasValue) {
+                    ruleFunc = ruleFunc(ruleInfo[1]);
+                }
+
+                if (Array.isArray(formRules[input.name])) {
+                    formRules[input.name].push(ruleFunc)
+                } else {
+
+                    formRules[input.name] = [ruleFunc];
+                }
+            }
+
+            // Lang nghe su kien de validate(blur, onchange,...)
+            input.onblur = handleValidate;
+            input.oninput = handleClearError;
         }
     }
-}
 
-Validator.minLength = function (selector, min, message) {
-    return {
-        selector: selector,
-        test: function (value) {
-            return value.length >= min ? undefined : message || `Vui long nhap toi thieu ${min} ky tu`;
+    function handleValidate(event) {
+        var rules = formRules[event.target.name];
+        var errorMessage;
+        for(var rule of rules){
+            errorMessage = rule(event.target.value);
+            if(errorMessage){
+                break;
+            }
+        }
+        // neu co loi thi hien thi message loi ra UI
+        if (errorMessage) {
+            var formGroup = getParent(event.target, '.form-group')
+
+            if (formGroup) {
+                formGroup.classList.add('invalid')
+                var formMessage = formGroup.querySelector('.form-message');
+                if (formMessage) {
+                    formMessage.innerText = errorMessage;
+                }
+            }
+        }
+        return !errorMessage
+    }
+
+    function handleClearError(event) {
+        var formGroup = getParent(event.target, '.form-group')
+        if (formGroup.classList.contains('invalid')) {
+            formGroup.classList.remove('invalid');
+
+            var formMessage = formGroup.querySelector('.form-message');
+            if (formMessage) {
+                formMessage.innerText = '';
+            }
         }
     }
-}
 
-Validator.isConfirmed = function (selector, getConfirmValue, message) {
-    return {
-        selector: selector,
-        test: function (value) {
-            return value === getConfirmValue() ? undefined : message || 'Gia tri nhap vao khong chinh xac'
+    
+    // xu ly hanh vi submit form
+    formElement.onsubmit = function (event) {
+        event.preventDefault();
+
+
+        // this keyword
+
+        var inputs = formElement.querySelectorAll('[name][rules]');
+        var isValid = true;
+
+        for (var input of inputs) {
+            if (!handleValidate({ target: input })) {
+                isValid = false;
+            }
+        }
+        // khi khong co loi thi submit form
+        if (isValid) {
+            if (typeof _this.onSubmit === 'function') {
+
+                var enableInputs = formElement.querySelectorAll('[name]');
+                var formValues = Array.from(enableInputs).reduce(function (values, input) {
+                    switch (input.type) {
+                        case 'radio':
+                            values[input.name] = formElement.querySelector('input[name="' + input.name + '"]:checked').value;
+                            break;
+                        case 'checkbox':
+                            if (!input.matches(':checked'))
+                                values[input.name] = '';
+                            return values;
+                            if (!Array.isArray(values[input.name])) {
+                                values[input.name] = [];
+                            }
+                            values[input.name].push(input.value);
+                            break;
+                        case 'file':
+                            values[input.name] = input.files;
+                            break;
+                        default:
+                            values[input.name] = input.value
+                    }
+                    return values;
+                }, {});
+
+                // goi lai ham onSubmit va tra ve kem gia tri cua form
+                _this.onSubmit(formValues);
+            } else {
+                formElement.submit();
+            }
         }
     }
 }
